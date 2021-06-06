@@ -517,42 +517,6 @@ bool load_ffield(
       props.push_back(pr);
     }
     find_cones(V,F,props,S);
-    
-// #define LOG
-#ifdef LOG
-    int count = 0;
-    std::map<int,int> histogram;
-    std::ofstream nf;
-    std::string xx = fname;
-    xx = xx + "_csv";
-    nf.open(xx,std::ios_base::app);
-    for(int i=0;i<S.rows();i++){
-      if(S(i) != 0){
-        // spdlog::info("{0:d}: {1:f}", i, S(i));
-        nf<<"c "<<i+1<<" "<<2*(1-S(i))<<std::endl;
-        count++;
-      }
-      if(S(i) < 0)
-        histogram[4*(1-S(i))]++;
-      if(S(i) > 0)
-        histogram[4*(1-S(i))]++;
-    }
-    spdlog::info("#singularities loaded: {0:d}", count);
-    nf.close();
-    std::ofstream mf;
-    std::pair<int,int> gb = statistics(V,F);
-    mf.open("singularity_histogram.csv",std::ios_base::app);
-    mf<<fname<<","<<gb.first<<","<<count<<",";
-    for(auto key_val: histogram){
-      int key = key_val.first;
-      int val = key_val.second;
-      mf<<val<<"("<<key<<")"<<",";
-    }
-    mf<<std::endl;
-    
-    mf.close();
-    // exit(0);
-#endif
 
   return true;
 }

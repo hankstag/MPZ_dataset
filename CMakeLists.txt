@@ -25,7 +25,7 @@ add_library(field
   src/field/angles.cpp
 )
 
-target_link_libraries(field igl::core highfive)
+target_link_libraries(field  igl::core highfive)
 
 # Add your project files
 add_executable(${PROJECT_NAME} src/main.cpp)
