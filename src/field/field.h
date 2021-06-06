@@ -2,6 +2,7 @@
 #define FIELD_H
 
 #include <Eigen/Core>
+#include <vector>
 
 // collection of properties defined per face
 class Property{
