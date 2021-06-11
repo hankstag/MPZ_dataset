@@ -23,9 +23,10 @@ add_library(field
   src/field/util.cpp
   src/field/turning_number.cpp
   src/field/angles.cpp
+  src/edge_map.cpp
 )
 
-target_link_libraries(field  igl::core highfive)
+target_link_libraries(field igl::core highfive)
 
 # Add your project files
 add_executable(${PROJECT_NAME} src/main.cpp)

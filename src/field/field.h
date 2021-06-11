@@ -35,5 +35,7 @@ void load_ffield_hdf5(std::string fname, Eigen::MatrixXd& V, Eigen::MatrixXi& F,
 void find_cones(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, const std::vector<Property>& props, Eigen::VectorXd& S);
 
 void theta_to_vector(const Eigen::VectorXd& theta, const std::vector<Eigen::MatrixXd>& frames, Eigen::MatrixXd& R);
+void induce_theta_hat(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, std::vector<Property>& props, Eigen::VectorXd& theta_hat);
+void write_theta_data(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, std::vector<Property>& props, Eigen::VectorXd& theta_hat, std::string out_dir, std::string model_name);
 
 #endif

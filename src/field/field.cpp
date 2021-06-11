@@ -2,6 +2,7 @@
 #include "util.h"
 #include "turning_number.h"
 #include "angles.h"
+#include "../edge_map.h"
 #include <highfive/H5Easy.hpp>
 #include <vector>
 #include <set>
@@ -12,6 +13,9 @@
 #include <igl/edge_topology.h>
 #include <igl/per_face_normals.h>
 #include <igl/triangle_triangle_adjacency.h>
+#include <igl/PI.h>
+#include <igl/boundary_loop.h>
+#include <igl/writeOBJ.h>
 
 typedef CVec3T<double> CVec3D;
 
@@ -583,4 +587,134 @@ void load_ffield_hdf5(
     Property pr(_pj, _kappa, _TP, rd);
     props.push_back(pr);
   }
+}
+
+// evaluate theta of face i+1 based on value of theta on face i
+// update rule: P[i -> i+1](\theta_i) = \sum_{j=0}^{m-1}  (\kappa_{j,j+1} + p_{j,j+1}*pi/2)  + \theta_i
+// \theta_{i+1} =   P[i -> i+1](\theta_i) + \alpha
+// f_0 and f_1 needs to two consecutive faces along border (but not necessarily share a common edge)
+double parallel_transport_along_border(
+  const Eigen::MatrixXd& V,
+  const Eigen::MatrixXi& F,
+  const std::vector<Property>& props,
+  const Eigen::MatrixXi& TT,
+  const Eigen::MatrixXi& TTi,
+  double theta_0,
+  int f
+){
+  
+  double kappa_sum = 0;
+  int pj_sum = 0;
+  double angle_sum = 0; // sum of angles of fan centered at common vertex of f and it's predecessor
+  
+  // find local border edge id for face f (marked as cut)
+  auto find_border_e = []( const Eigen::MatrixXi& TT, int f ){
+    int e = 0;
+    for(; e < 3;e++){
+      if(TT(f,e) == -1)
+        return e;
+    }
+    return -1;
+  };
+  int e0 = find_border_e(TT, f);
+  assert(e0 != -1);
+  auto ei = igl::HalfEdgeIterator<Eigen::MatrixXi,Eigen::MatrixXi,Eigen::MatrixXi>(F,TT,TTi,f,e0);
+  
+  ei.flipV();
+  std::vector<int> fan;
+  Eigen::Vector3d normal(0,0,1);
+  do{
+    Eigen::Vector3d p0, p1, p2;
+    scaled_triangle(V,F,TT,ei.Fi(),ei.Ei(),p0,p1,p2); // p0 is F(f,e)
+    angle_sum += signed_angle(p0-p1, p2-p1, normal);
+    auto diff = signed_angle(p0-p1, p2-p1, normal);
+    fan.push_back(ei.Fi());
+    ei.flipE();
+    ei.flipF();
+    if(TT(ei.Fi(), ei.Ei()) != -1){
+      kappa_sum += props[ei.Fi()].kappa(ei.Ei());
+      pj_sum += props[ei.Fi()].pj(ei.Ei());
+    }
+  }while(TT(ei.Fi(), ei.Ei()) != -1);
+
+  double alpha = igl::PI - std::abs(angle_sum);
+  
+  return theta_0 - kappa_sum - pj_sum * igl::PI/2 + alpha;
+  
+}
+
+
+void field_turn_along_bd(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, std::vector<Property>& props, Eigen::VectorXd& theta_hat){
+
+  // assign angles for boundary vertices based on the turning of field
+  std::vector<std::vector<int>> bds;
+  igl::boundary_loop(F, bds);
+
+  EMap em;
+  init_EMap(F, em);
+
+  Eigen::MatrixXi TT, TTi;
+  igl::triangle_triangle_adjacency(F, TT, TTi);
+
+  for(auto bd: bds){
+    int m = bd.size();
+    for(int i = 0; i < m; i++){
+      int v_prev = bd[(i-1+m)%m];
+      int v_curr = bd[i];
+      int v_next = bd[(i+1)%m];
+      auto fe0 = em[std::make_pair(v_prev, v_curr)];
+      auto fe1 = em[std::make_pair(v_curr, v_next)];
+      int f0 = fe0.first, e0 = fe0.second;
+      int f1 = fe1.first, e1 = fe1.second;
+      double alpha_n = parallel_transport_along_border(V, F, props, TT, TTi, props[f0].angle, f0);
+      double beta = props[f1].angle;
+      auto x = alpha_n-beta;
+      if(std::abs(x) < 1e-10) x = 0;
+      theta_hat(v_curr) = igl::PI - x;
+    }
+  }
+}
+
+void induce_theta_hat(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, std::vector<Property>& props, Eigen::VectorXd& theta_hat){
+
+  theta_hat.resize(V.rows()); theta_hat.setZero();
+
+  // compute singularity indices, with boundary vertices ignored
+  Eigen::VectorXd S;
+  find_cones(V, F, props, S);
+
+  auto is_bd = igl::is_border_vertex(F);
+
+  // assign angles for interior vertices
+  for(int i = 0; i < V.rows(); i++){
+    if(is_bd[i]) continue;
+    theta_hat(i) = 2*igl::PI*(1-S(i));
+  }
+
+  // assign angles induced from field for boundary vertices
+  field_turn_along_bd(V, F, props, theta_hat);
+
+}
+
+void write_theta_data(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, std::vector<Property>& props, Eigen::VectorXd& theta_hat, std::string out_dir, std::string model_name){
+    
+  std::vector<std::vector<int>> bds;
+  igl::boundary_loop(F, bds);
+  
+  std::string type;
+  if(bds.size() != 0){
+    type = "open";
+  }else{
+    type = "closed";
+  }
+  std::string tname = out_dir +"/" + type + "/"+model_name+"_Th_hat";
+  std::string mname = out_dir +"/" + type + "/"+model_name+"_noncut.obj";
+  std::ofstream mf;
+  mf.open(tname,std::ios_base::out);
+  for(int i = 0; i < theta_hat.rows(); i++){
+    mf << std::setprecision(17) << theta_hat(i) << std::endl;
+  }
+  mf.close();
+  igl::writeOBJ(mname, V, F);
+
 }
