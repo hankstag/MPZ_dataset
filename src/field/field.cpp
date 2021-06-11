@@ -703,10 +703,11 @@ void write_theta_data(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, std::v
   
   std::string type;
   if(bds.size() != 0){
-    type = "open";
+    type = "boundary-Myles";
   }else{
-    type = "closed";
+    type = "closed-Myles";
   }
+
   std::string tname = out_dir +"/" + type + "/"+model_name+"_Th_hat";
   std::string mname = out_dir +"/" + type + "/"+model_name+"_noncut.obj";
   std::ofstream mf;
