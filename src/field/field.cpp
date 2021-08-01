@@ -719,3 +719,100 @@ void write_theta_data(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, std::v
   igl::writeOBJ(mname, V, F);
 
 }
+
+void compute_angle_defect(const Eigen::MatrixXd& V, const Eigen::MatrixXi& F, Eigen::VectorXd& A){
+  A = Eigen::VectorXd::Constant(V.rows(), 2*igl::PI);
+  for (unsigned int i = 0; i < F.rows(); ++i)
+  {
+    for (int j = 0; j < 3; ++j)
+    {
+      Eigen::VectorXd a = V.row(F(i,(j+1)%3)) - V.row(F(i,j));
+      Eigen::VectorXd b = V.row(F(i,(j+2)%3)) - V.row(F(i,j));
+      double t = a.transpose() * b;
+      if(a.norm() > 0. && b.norm() > 0.)
+        t /= (a.norm() * b.norm());
+      else
+        throw std::runtime_error("igl::copyleft::comiso::NRosyField::angleDefect: Division by zero!");
+      A(F(i, j)) -= std::acos(std::max(std::min(t, 1.), -1.));
+    }
+  }
+}
+
+// not recommended - information lost along the process
+double vector_to_theta(const Eigen::MatrixXd& frame, const Eigen::Vector3d& v){
+  // Project onto the tangent plane
+  Eigen::Vector2d vp = frame * v;
+  // Convert to angle
+  return std::atan2(vp(1), vp(0));
+}
+
+template <typename Scalar>
+void convert_vector_to_matrix(
+  const Eigen::MatrixXd& V,
+  const Eigen::MatrixXi& F,
+  const Eigen::Matrix<Scalar,-1,1>& pj_v,
+  Eigen::Matrix<Scalar,-1,-1>& pj
+){
+  Eigen::MatrixXi EV,FE,EF;
+  igl::edge_topology(V, F, EV, FE, EF);
+  Eigen::MatrixXi TT,TTi;
+  igl::triangle_triangle_adjacency(F,TT,TTi);
+  pj.setZero(F.rows(),3);
+  for(int i=0;i<EF.rows();i++){
+    int f0 = EF(i,0);
+    int f1 = EF(i,1);
+    int c = -1, d = -1;
+    if(f0 == -1 || f1 == -1) continue;
+    for(int k=0;k<3;k++){
+      if(TT(f0,k) == f1){
+        c = k;
+        break;
+      }
+    }
+    for(int k=0;k<3;k++){
+      if(TT(f1,k) == f0){
+        d = k;
+        break;
+      }
+    }
+    int v0 = F(f0,c);
+    int v1 = F(f0,(c+1)%3);
+    if(EV(i,0) == v0){
+      pj(f0,c) = pj_v(i);
+      pj(f1,d) = -pj_v(i);
+    }else{
+      pj(f0,c) = -pj_v(i);
+      pj(f1,d) = pj_v(i);
+    }
+  }
+}
+
+// convert pj representation from matrix to map
+template <typename Scalar>
+void convert_matrix_to_vector(
+  const Eigen::MatrixXd& V,
+  const Eigen::MatrixXi& F,
+  const Eigen::Matrix<Scalar,-1,-1>& pj,
+  Eigen::Matrix<Scalar,-1,1>& pj_v
+){
+  Eigen::MatrixXi EV,FE,EF;
+  igl::edge_topology(V, F, EV, FE, EF);
+  pj_v.setZero(EV.rows());
+  for(int i=0;i<F.rows();i++){
+    for(int k=0;k<3;k++){
+      int ei = FE(i,k);
+      int f0 = i;
+      if(EV(ei,0) == F(f0,k) && EV(ei,1) == F(f0,(k+1)%3)){
+        pj_v(ei) = pj(i,k);
+      }else{
+        pj_v(ei) = -pj(i,k);
+      }
+      
+    }
+  }
+}
+
+template void convert_vector_to_matrix<double>(Eigen::Matrix<double, -1, -1, 0, -1, -1> const&, Eigen::Matrix<int, -1, -1, 0, -1, -1> const&, Eigen::Matrix<double, -1, 1, 0, -1, 1> const&, Eigen::Matrix<double, -1, -1, 0, -1, -1>&);
+template void convert_vector_to_matrix<int>(Eigen::Matrix<double, -1, -1, 0, -1, -1> const&, Eigen::Matrix<int, -1, -1, 0, -1, -1> const&, Eigen::Matrix<int, -1, 1, 0, -1, 1> const&, Eigen::Matrix<int, -1, -1, 0, -1, -1>&);
+template void convert_matrix_to_vector<double>(Eigen::Matrix<double, -1, -1, 0, -1, -1> const&, Eigen::Matrix<int, -1, -1, 0, -1, -1> const&, Eigen::Matrix<double, -1, -1, 0, -1, -1> const&, Eigen::Matrix<double, -1, 1, 0, -1, 1>&);
+template void convert_matrix_to_vector<int>(Eigen::Matrix<double, -1, -1, 0, -1, -1> const&, Eigen::Matrix<int, -1, -1, 0, -1, -1> const&, Eigen::Matrix<int, -1, -1, 0, -1, -1> const&, Eigen::Matrix<int, -1, 1, 0, -1, 1>&);
