@@ -27,6 +27,7 @@ add_library(field
 )
 
 target_link_libraries(field igl::core highfive)
+target_include_directories(field PUBLIC src)
 
 # Add your project files
 add_executable(${PROJECT_NAME} src/main.cpp)
